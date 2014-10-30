@@ -25,8 +25,6 @@ from ..utils.exceptions import AstropyUserWarning
 from .utils import (discretize_model, add_kernel_arrays_1D,
                     add_kernel_arrays_2D)
 
-MAX_NORMALIZATION = 100
-
 __all__ = ['Kernel', 'Kernel1D', 'Kernel2D', 'kernel_arithmetics']
 
 
@@ -42,16 +40,18 @@ class Kernel(object):
     _separable = False
     _is_bool = True
     _model = None
+    _normalization = 1.
 
     def __init__(self, array):
+        self._sum = array.sum()
         self._array = np.asanyarray(array)
 
     @property
     def truncation(self):
         """
-        Deviation from the normalization to one.
+        Deviation from the desired kernel normalization.
         """
-        return self._truncation
+        return self._normalization - self._sum
 
     @property
     def is_bool(self):
@@ -84,6 +84,13 @@ class Kernel(object):
         """
         return [axes_size // 2 for axes_size in self._array.shape]
 
+    @property
+    def normalization(self):
+        """
+        Desired kernel normalization. 
+        """
+        return self._normalization
+
     def normalize(self, mode='integral'):
         """
         Normalize the filter kernel.
@@ -97,28 +104,15 @@ class Kernel(object):
                 * 'peak'
                     Kernel is normalized such that its peak = 1.
         """
-
+        # There are kernel that sum to zero and
+        # the user should be warned in this case
+        if self._normalization == 0:
+            warnings.warn('Kernel cannot be normalized because desired normalization is zero!',  AstropyUserWarning)
         if mode == 'integral':
-            normalization = self._array.sum()
-        elif mode == 'peak':
-            normalization = self._array.max()
-        else:
-            raise ValueError("invalid mode, must be 'integral' or 'peak'")
-
-        # Warn the user for kernels that sum to zero
-        if normalization == 0:
-            warnings.warn('The kernel cannot be normalized because it '
-                          'sums to zero.', AstropyUserWarning)
-        else:
-            np.divide(self._array, normalization, self._array)
-
-            if np.abs(1.0 / normalization) > MAX_NORMALIZATION:
-                warnings.warn('The kernel normalization factor is '
-                              'exceptionally large,'
-                              ' > {0}.'.format(MAX_NORMALIZATION),
-                              AstropyUserWarning)
-
-        self._kernel_sum = self._array.sum()
+            self._array /= self._sum
+        if mode == 'peak':
+            np.divide(self._array, self._array.max(), self.array)
+            #self._sum = self._array.sum()
 
     @property
     def shape(self):
@@ -314,8 +308,12 @@ class Kernel2D(Kernel):
         # Initialize from array
         elif array is not None:
             self._model = None
-
+        else:
+            raise TypeError("Must specify either array or model.")
         super(Kernel2D, self).__init__(array)
+        if self.separable:
+            self._array_separable = np.array([self._array[self.center[0]]])
+            self._array_separable /= self._array_separable.sum()    
 
 
 def kernel_arithmetics(kernel, value, operation):
@@ -335,7 +333,7 @@ def kernel_arithmetics(kernel, value, operation):
             * 'sub'
                 Subtract two kernels
             * 'mul'
-                Multiply kernel with number or convolve two kernels.
+                Multiply kernel with number.
     """
     # 1D kernels
     if isinstance(kernel, Kernel1D) and isinstance(value, Kernel1D):
@@ -361,6 +359,9 @@ def kernel_arithmetics(kernel, value, operation):
                             "to use convolve(kernel1, kernel2) instead.")
         new_kernel = Kernel2D(array=new_array)
         new_kernel._separable = kernel._separable and value._separable
+        if new_kernel._separable:
+            new_kernel._array_separable = add_kernel_arrays_2D(kernel._array_separable, value._array_separable)
+            new_kernel._array_separable /= new_kernel._array_separable.sum()
         new_kernel._is_bool = kernel._is_bool or value._is_bool
 
     # kernel and number
@@ -373,4 +374,20 @@ def kernel_arithmetics(kernel, value, operation):
             raise Exception("Kernel operation not supported.")
     else:
         raise Exception("Kernel operation not supported.")
+    return new_kernel
+
+
+def _convolve_kernels(kernel_1, kernel_2):
+    """Convolve two kernels and return and new Kernel instance"""
+    from .boundary_fill import convolve1d_boundary_fill, convolve2d_boundary_fill
+    if isinstance(kernel_1, Kernel1D) and isinstance(kernel_2, Kernel1D):
+        new_array = convolve1d_boundary_fill(kernel_1.array, kernel_2.array, 0)
+        new_kernel = Kernel1D(array=new_array)
+    elif isinstance(kernel_1, Kernel2D) and isinstance(kernel_2, Kernel2D):
+        new_array = convolve2d_boundary_fill(kernel_1.array, kernel_2.array, 0)
+        new_kernel = Kernel2D(array=new_array)
+    else:
+        raise Exception("Can't convolve 1D and 2D kernel.")
+    new_kernel._separable = kernel_1._separable and kernel_2._separable
+    new_kernel._is_bool = False
     return new_kernel

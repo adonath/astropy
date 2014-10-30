@@ -17,9 +17,6 @@ def convolve1d_boundary_fill(np.ndarray[DTYPE_t, ndim=1] f,
                              np.ndarray[DTYPE_t, ndim=1] g,
                              float fill_value):
 
-    if g.shape[0] % 2 != 1:
-        raise ValueError("Convolution kernel must have odd dimensions")
-
     assert f.dtype == DTYPE and g.dtype == DTYPE
 
     cdef int nx = f.shape[0]
@@ -85,17 +82,90 @@ def convolve1d_boundary_fill(np.ndarray[DTYPE_t, ndim=1] f,
     # GIL acquired again here
     return conv
 
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def interpolate2d_boundary_fill(np.ndarray[DTYPE_t, ndim=2] f,
+                             np.ndarray[DTYPE_t, ndim=2] g,
+                             float fill_value):
+    cdef int nx = f.shape[0]
+    cdef int ny = f.shape[1]
+    cdef int nkx = g.shape[0]
+    cdef int nky = g.shape[1]
+    cdef int wkx = nkx // 2
+    cdef int wky = nky // 2
+    cdef np.ndarray[DTYPE_t, ndim=2] fixed = np.empty([nx, ny], dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.empty([nx, ny], dtype=DTYPE)
+    cdef unsigned int i, j, iii, jjj
+    cdef int ii, jj
+
+    cdef int iimin, iimax, jjmin, jjmax
+
+    cdef DTYPE_t top, bot, ker, val
+
+    # Need a first pass to replace NaN values with value convolved from
+    # neighboring values
+    for i in range(nx):
+        for j in range(ny):
+            if npy_isnan(f[i, j]):
+                top = 0.
+                bot = 0.
+                iimin = i - wkx
+                iimax = i + wkx + 1
+                jjmin = j - wky
+                jjmax = j + wky + 1
+                for ii in range(iimin, iimax):
+                    for jj in range(jjmin, jjmax):
+                        if ii < 0 or ii > nx - 1 or jj < 0 or jj > ny - 1:
+                            val = fill_value
+                        else:
+                            val = f[ii, jj]
+                        if not npy_isnan(val):
+                            ker = g[<unsigned int>(wkx + ii - i),
+                                    <unsigned int>(wky + jj - j)]
+                            top += val * ker
+                            bot += ker
+                if bot != 0.:
+                    fixed[i, j] = top / bot
+                else:
+                    fixed[i, j] = f[i, j]
+            else:
+                fixed[i, j] = f[i, j]
+
+    # Now run the proper convolution
+    for i in range(nx):
+        for j in range(ny):
+            if not npy_isnan(fixed[i, j]):
+                top = 0.
+                bot = 0.
+                iimin = i - wkx
+                iimax = i + wkx + 1
+                jjmin = j - wky
+                jjmax = j + wky + 1
+                for ii in range(iimin, iimax):
+                    for jj in range(jjmin, jjmax):
+                        if ii < 0 or ii > nx - 1 or jj < 0 or jj > ny - 1:
+                            val = fill_value
+                        else:
+                            val = fixed[ii, jj]
+                        ker = g[<unsigned int>(wkx + ii - i),
+                                <unsigned int>(wky + jj - j)]
+                        if not npy_isnan(val):
+                            top += val * ker
+                            bot += ker
+                if bot != 0:
+                    conv[i, j] = top / bot
+                else:
+                    conv[i, j] = fixed[i, j]
+            else:
+                conv[i, j] = fixed[i, j]
+
+    return conv
+
+
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
 def convolve2d_boundary_fill(np.ndarray[DTYPE_t, ndim=2] f,
                              np.ndarray[DTYPE_t, ndim=2] g,
                              float fill_value):
-
-    if g.shape[0] % 2 != 1 or g.shape[1] % 2 != 1:
-        raise ValueError("Convolution kernel must have odd dimensions")
-
-    assert f.dtype == DTYPE and g.dtype == DTYPE
-
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]

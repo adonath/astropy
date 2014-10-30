@@ -1,6 +1,7 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+import warnings
 
 import numpy as np
 
@@ -8,6 +9,7 @@ from .core import Kernel1D, Kernel2D, Kernel
 from .utils import KernelSizeError
 from ..modeling import models
 from ..modeling.core import Fittable1DModel, Fittable2DModel
+from astropy.utils.exceptions import AstropyUserWarning
 
 __all__ = sorted(['Gaussian1DKernel', 'Gaussian2DKernel', 'CustomKernel',
                   'Box1DKernel', 'Box2DKernel', 'Tophat2DKernel',
@@ -24,6 +26,7 @@ def _round_up_to_odd_integer(value):
     else:
         return i
 
+NORMALIZATION_TOLERANCE = 0.1
 
 class Gaussian1DKernel(Kernel1D):
     """
@@ -85,7 +88,6 @@ class Gaussian1DKernel(Kernel1D):
                                         0, stddev)
         self._default_size = _round_up_to_odd_integer(8 * stddev)
         super(Gaussian1DKernel, self).__init__(**kwargs)
-        self._truncation = np.abs(1. - self._array.sum())
 
 
 class Gaussian2DKernel(Kernel2D):
@@ -151,7 +153,6 @@ class Gaussian2DKernel(Kernel2D):
                                         0, stddev, stddev)
         self._default_size = _round_up_to_odd_integer(8 * stddev)
         super(Gaussian2DKernel, self).__init__(**kwargs)
-        self._truncation = np.abs(1. - self._array.sum())
 
 
 class Box1DKernel(Kernel1D):
@@ -212,14 +213,12 @@ class Box1DKernel(Kernel1D):
     """
     _separable = True
     _is_bool = True
-
+    
     def __init__(self, width, **kwargs):
         self._model = models.Box1D(1. / width, 0, width)
         self._default_size = _round_up_to_odd_integer(width)
         kwargs['mode'] = 'linear_interp'
         super(Box1DKernel, self).__init__(**kwargs)
-        self._truncation = 0
-        self.normalize()
 
 
 class Box2DKernel(Kernel2D):
@@ -288,8 +287,6 @@ class Box2DKernel(Kernel2D):
         self._default_size = _round_up_to_odd_integer(width)
         kwargs['mode'] = 'linear_interp'
         super(Box2DKernel, self).__init__(**kwargs)
-        self._truncation = 0
-        self.normalize()
 
 
 class Tophat2DKernel(Kernel2D):
@@ -347,8 +344,7 @@ class Tophat2DKernel(Kernel2D):
         self._model = models.Disk2D(1. / (np.pi * radius ** 2), 0, 0, radius)
         self._default_size = _round_up_to_odd_integer(2 * radius)
         super(Tophat2DKernel, self).__init__(**kwargs)
-        self._truncation = 0
-
+        self.normalize()
 
 class Ring2DKernel(Kernel2D):
     """
@@ -407,8 +403,7 @@ class Ring2DKernel(Kernel2D):
                                     0, 0, radius_in, width)
         self._default_size = _round_up_to_odd_integer(2 * radius_out)
         super(Ring2DKernel, self).__init__(**kwargs)
-        self._truncation = 0
-
+        self.normalize()
 
 class Trapezoid1DKernel(Kernel1D):
     """
@@ -464,7 +459,6 @@ class Trapezoid1DKernel(Kernel1D):
         self._model = models.Trapezoid1D(1, 0, width, slope)
         self._default_size = _round_up_to_odd_integer(width + 2. / slope)
         super(Trapezoid1DKernel, self).__init__(**kwargs)
-        self._truncation = 0
         self.normalize()
 
 
@@ -524,7 +518,6 @@ class TrapezoidDisk2DKernel(Kernel2D):
         self._model = models.TrapezoidDisk2D(1, 0, 0, radius, slope)
         self._default_size = _round_up_to_odd_integer(2 * radius + 2. / slope)
         super(TrapezoidDisk2DKernel, self).__init__(**kwargs)
-        self._truncation = 0
         self.normalize()
 
 
@@ -588,14 +581,14 @@ class MexicanHat1DKernel(Kernel1D):
         plt.show()
 
     """
-    _is_bool = True
+    _is_bool = False
+    _normalization = 0
 
     def __init__(self, width, **kwargs):
         amplitude = 1.0 / (np.sqrt(2 * np.pi) * width ** 3)
         self._model = models.MexicanHat1D(amplitude, 0, width)
         self._default_size = _round_up_to_odd_integer(8 * width)
         super(MexicanHat1DKernel, self).__init__(**kwargs)
-        self._truncation = np.abs(self._array.sum() / self._array.size)
 
 
 class MexicanHat2DKernel(Kernel2D):
@@ -662,13 +655,12 @@ class MexicanHat2DKernel(Kernel2D):
         plt.show()
     """
     _is_bool = False
-
+    _normalization = 0
     def __init__(self, width, **kwargs):
         amplitude = 1.0 / (np.pi * width ** 4)
         self._model = models.MexicanHat2D(amplitude, 0, 0, width)
         self._default_size = _round_up_to_odd_integer(8 * width)
         super(MexicanHat2DKernel, self).__init__(**kwargs)
-        self._truncation = np.abs(self._array.sum() / self._array.size)
 
 
 class AiryDisk2DKernel(Kernel2D):
@@ -725,13 +717,12 @@ class AiryDisk2DKernel(Kernel2D):
         plt.show()
     """
     _is_bool = False
-
+    
     def __init__(self, radius, **kwargs):
         self._model = models.AiryDisk2D(1, 0, 0, radius)
         self._default_size = _round_up_to_odd_integer(8 * radius)
         super(AiryDisk2DKernel, self).__init__(**kwargs)
         self.normalize()
-        self._truncation = None
 
 
 class Moffat2DKernel(Kernel2D):
@@ -996,21 +987,20 @@ class CustomKernel(Kernel):
         """
         Filter kernel array setter
         """
-        if isinstance(array, np.ndarray):
-            self._array = array.astype(np.float64)
-        elif isinstance(array, list):
-            self._array = np.array(array, dtype=np.float64)
-        else:
-            raise TypeError("Must be list or array.")
-
+        from .utils import convert_input_array
+        array, _ = convert_input_array(array)
         # Check if array is odd in all axes
-        odd = np.all([axes_size % 2 != 0 for axes_size in self.shape])
+        odd = np.all([axes_size % 2 != 0 for axes_size in array.shape])
         if not odd:
             raise KernelSizeError("Kernel size must be odd in all axes.")
-
+        if np.abs(array.sum()) < NORMALIZATION_TOLERANCE:
+            warnings.warn('Sum of the array close to zero. Setting normalization to zero!', AstropyUserWarning)
+            self._normalization = 0
+        else:
+            self._normalization = 1.
         # Check if array is bool
-        ones = self._array == 1.
-        zeros = self._array == 0
+        ones = array == 1.
+        zeros = array == 0
         self._is_bool = np.all(np.logical_or(ones, zeros))
+        self._array = array
 
-        self._truncation = 0.0

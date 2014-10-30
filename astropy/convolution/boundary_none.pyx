@@ -79,14 +79,8 @@ def convolve1d_boundary_none(np.ndarray[DTYPE_t, ndim=1] f,
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
+def interpolate2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
                              np.ndarray[DTYPE_t, ndim=2] g):
-
-    if g.shape[0] % 2 != 1 or g.shape[1] % 2 != 1:
-        raise ValueError("Convolution kernel must have odd dimensions")
-
-    assert f.dtype == DTYPE and g.dtype == DTYPE
-
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]
@@ -96,8 +90,7 @@ def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
 
     # The following need to be set to zeros rather than empty because the
     # boundary does not get reset.
-    cdef np.ndarray[DTYPE_t, ndim=2] fixed = np.zeros([nx, ny], dtype=DTYPE)
-    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t, ndim=2] fixed = f.copy()
 
     cdef unsigned int i, j, ii, jj
 
@@ -129,6 +122,7 @@ def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
                         fixed[i, j] = f[i, j]
                 else:
                     fixed[i, j] = f[i, j]
+<<<<<<< HEAD
 
         # Now run the proper convolution
         for i in range(wkx, nx - wkx):
@@ -151,7 +145,203 @@ def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
                 else:
                     conv[i, j] = fixed[i, j]
     # GIL acquired again here
+=======
+            else:
+                continue
+    return fixed
+
+
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
+                             np.ndarray[DTYPE_t, ndim=2] g):
+    cdef int nx = f.shape[0]
+    cdef int ny = f.shape[1]
+    cdef int nkx = g.shape[0]
+    cdef int nky = g.shape[1]
+    cdef int wkx = nkx // 2
+    cdef int wky = nky // 2
+
+    # The following need to be set to zeros rather than empty because the
+    # boundary does not get reset.
+    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
+
+    cdef unsigned int i, j, ii, jj
+
+    cdef int iimin, iimax, jjmin, jjmax
+
+    cdef DTYPE_t top, bot, ker, val
+
+    # Now run the proper convolution
+    for i in range(wkx, nx - wkx):
+        for j in range(wky, ny - wky):
+            if not npy_isnan(f[i, j]):
+                top = 0.
+                bot = 0.
+                for ii in range(i - wkx, i + wkx + 1):
+                    for jj in range(j - wky, j + wky + 1):
+                        val = f[ii, jj]
+                        ker = g[<unsigned int>(wkx + ii - i),
+                                <unsigned int>(wky + jj - j)]
+                        if not npy_isnan(val):
+                            top += val * ker
+                            bot += ker
+                if bot != 0:
+                    conv[i, j] = top / bot
+                else:
+                    conv[i, j] = f[i, j]
+            else:
+                conv[i, j] = f[i, j]
     return conv
+
+
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
+                             np.ndarray[DTYPE_t, ndim=2] g):
+    cdef int nx = f.shape[0]
+    cdef int ny = f.shape[1]
+    cdef int nkx = g.shape[0]
+    cdef int nky = g.shape[1]
+    cdef int wkx = nkx // 2
+    cdef int wky = nky // 2
+
+    # The following need to be set to zeros rather than empty because the
+    # boundary does not get reset.
+    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
+
+    cdef unsigned int i, j, ii, jj
+
+    cdef int iimin, iimax, jjmin, jjmax
+
+    cdef DTYPE_t top, bot, ker, val
+
+    if wkx == 0:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[0, wky]
+                for jj in range(1, wky + 1):
+                    val += (f[i, j + jj] +
+                            f[i, j - jj]) * g[0, jj + wky]
+                conv[i, j] = val
+    elif wky == 0:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[wkx, 0]
+                for ii in range(1, wkx + 1):
+                    val += (f[i + ii, j] +
+                            f[i - ii, j]) * g[ii + wkx, 0]
+                conv[i, j] = val
+    else:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[wkx, wky]
+                for ii in range(1, wkx + 1):
+                    val += (f[i + ii, j] +
+                                f[i - ii, j] +
+                                f[i, j - ii] +
+                                f[i, j + ii]) * g[ii + wkx, wkx]
+                for ii in range(1, wkx + 1):
+                    for jj in range(1, wky + 1):
+                        val += (f[i + ii, j + jj] +
+                                f[i - ii, j + jj] +
+                                f[i + ii, j - jj] +
+                                f[i - ii, j - jj]) * g[ii + wkx, jj + wky]
+                conv[i, j] = val
+    return conv
+
+
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def convolve2d_boundary_none_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
+                             np.ndarray[DTYPE_t, ndim=2] g):
+    cdef int nx = f.shape[0]
+    cdef int ny = f.shape[1]
+    cdef int nkx = g.shape[0]
+    cdef int nky = g.shape[1]
+    cdef int wkx = nkx // 2
+    cdef int wky = nky // 2
+
+    # The following need to be set to zeros rather than empty because the
+    # boundary does not get reset.
+    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t, ndim=2] tmp = np.zeros([wkx, ny], dtype=DTYPE)
+
+    cdef unsigned int i, j, ii, jj
+
+    cdef int iimin, iimax, jjmin, jjmax
+
+    cdef DTYPE_t top, bot, ker, val
+
+    for i in range(wkx, nx - wkx):
+        # Setup tmp array
+        for j in range(ny):
+            for ii in range(1, wkx + 1):
+                tmp[ii, j] = f[i + ii, j] + f[i - ii, j]
+        for j in range(wky, ny - wky):
+            val = f[i, j] * g[wkx, wky]
+            for ii in range(1, wkx + 1):
+                    val += (tmp[ii, j] + f[i, j - ii] + f[i, j + ii]) * g[ii + wkx, wkx]
+            for ii in range(1, wkx + 1):
+                for jj in range(1, wky + 1):
+                    val += (tmp[ii, j + jj] + tmp[ii, j - jj]) * g[ii + wkx, jj + wky]
+            conv[i, j] = val
+    return conv
+
+
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
+                             np.ndarray[DTYPE_t, ndim=2] g):
+
+    if g.shape[0] % 2 != 1 or g.shape[1] % 2 != 1:
+        raise ValueError("Convolution kernel must have odd dimensions")
+
+    assert f.dtype == DTYPE and g.dtype == DTYPE
+
+    cdef int nx = f.shape[0]
+    cdef int ny = f.shape[1]
+    cdef int nkx = g.shape[0]
+    cdef int nky = g.shape[1]
+    cdef int wkx = nkx // 2
+    cdef int wky = nky // 2
+
+    # The following need to be set to zeros rather than empty because the
+    # boundary does not get reset.
+    cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
+
+    cdef unsigned int i, j, ii, jj
+
+    cdef int iimin, iimax, jjmin, jjmax
+
+    cdef DTYPE_t top, bot, ker, val
+    
+    if wkx == 0:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[0, wky]
+                for jj in range(1, wky + 1):
+                    val += (f[i, j + jj] +
+                            f[i, j - jj]) * g[0, jj + wky]
+                conv[i, j] = val
+    elif wky == 0:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[wkx, 0]
+                for ii in range(1, wkx + 1):
+                    val += (f[i + ii, j] +
+                            f[i - ii, j]) * g[ii + wkx, 0]
+                conv[i, j] = val
+    else:
+        for i in range(wkx, nx - wkx):
+            for j in range(wky, ny - wky):
+                val = f[i, j] * g[wkx, wky]
+                for ii in range(1, wkx + 1):
+                    for jj in range(0, wky + 1):
+                        val += (f[i + ii, j + jj] +
+                                f[i - jj, j + ii] +
+                                f[i + jj, j - ii] +
+                                f[i - ii, j - jj]) * g[ii + wkx, jj + wky]
+                conv[i, j] = val
+>>>>>>> Added separable convolution and code cleanup
+    return conv
+
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function

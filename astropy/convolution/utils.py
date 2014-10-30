@@ -20,6 +20,25 @@ class KernelSizeError(Exception):
     Called when size of kernels is even.
     """
 
+def convert_input_array(array):
+    # Check that the arguments are lists or Numpy arrays
+    if isinstance(array, list):
+        array_internal = np.array(array, dtype=np.float)
+        array_dtype = array_internal.dtype
+    elif isinstance(array, np.ndarray):
+        # Note this won't copy if it doesn't have to -- which is okay
+        # because none of what follows modifies array_internal.  However,
+        # only numpy > 1.7 has support for no-copy astype, so we use
+        # a try/except because astropy supports 1.5 and 1.6
+        array_dtype = array.dtype
+        try:
+            array_internal = array.astype(float, copy=False)
+        except TypeError:
+            array_internal = array.astype(float)
+    else:
+        raise TypeError("array should be a list or a Numpy array")
+    return array_internal, array_dtype
+
 
 def add_kernel_arrays_1D(array_1, array_2):
     """

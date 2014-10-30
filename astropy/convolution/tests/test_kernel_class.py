@@ -18,6 +18,7 @@ from ..kernels import (
 from ..utils import KernelSizeError
 from ...modeling.models import Box2D, Gaussian1D, Gaussian2D
 from ...utils.exceptions import AstropyWarning, AstropyUserWarning
+from numpy.testing.utils import assert_allclose
 
 try:
     from scipy.ndimage import filters
@@ -312,7 +313,7 @@ class TestKernels(object):
         custom = CustomKernel(array)
         custom.normalize()
         assert custom.truncation == 0.
-        assert custom._kernel_sum == 0.
+        assert custom.normalization == 0
 
     def test_custom_2D_kernel_zerosum(self):
         """
@@ -323,7 +324,7 @@ class TestKernels(object):
         custom = CustomKernel(array)
         custom.normalize()
         assert custom.truncation == 0.
-        assert custom._kernel_sum == 0.
+        assert custom.normalization == 0
 
     def test_custom_kernel_odd_error(self):
         """
@@ -400,7 +401,7 @@ class TestKernels(object):
         box = Box2DKernel(5)
 
         # Check truncation
-        assert box.truncation == 0
+        assert_almost_equal(box.truncation, 0)
 
         # Check model
         assert isinstance(box.model, Box2D)
