@@ -17,8 +17,11 @@ from ..kernels import (
 
 from ..utils import KernelSizeError
 from ...modeling.models import Box2D, Gaussian1D, Gaussian2D
+<<<<<<< HEAD
 from ...utils.exceptions import AstropyWarning, AstropyUserWarning
 from numpy.testing.utils import assert_allclose
+=======
+>>>>>>> Use np.pad for boundary handling
 
 try:
     from scipy.ndimage import filters
@@ -65,8 +68,8 @@ class TestKernels(object):
         gauss_kernel_2D = Gaussian2DKernel(width)
         gauss_kernel_2D.normalize()
 
-        astropy_1D = convolve(delta_pulse_1D, gauss_kernel_1D, boundary='fill')
-        astropy_2D = convolve(delta_pulse_2D, gauss_kernel_2D, boundary='fill')
+        astropy_1D = convolve(delta_pulse_1D, gauss_kernel_1D, boundary='reflect')
+        astropy_2D = convolve(delta_pulse_2D, gauss_kernel_2D, boundary='reflect')
 
         scipy_1D = filters.gaussian_filter(delta_pulse_1D, width)
         scipy_2D = filters.gaussian_filter(delta_pulse_2D, width)
@@ -83,8 +86,8 @@ class TestKernels(object):
         mexican_kernel_1D = MexicanHat1DKernel(width)
         mexican_kernel_2D = MexicanHat2DKernel(width)
 
-        astropy_1D = convolve(delta_pulse_1D, mexican_kernel_1D, boundary='fill')
-        astropy_2D = convolve(delta_pulse_2D, mexican_kernel_2D, boundary='fill')
+        astropy_1D = convolve(delta_pulse_1D, mexican_kernel_1D, boundary='reflect')
+        astropy_2D = convolve(delta_pulse_2D, mexican_kernel_2D, boundary='reflect')
 
         # The Laplace of Gaussian filter is an inverted Mexican Hat
         # filter.
@@ -110,11 +113,11 @@ class TestKernels(object):
 
         if kernel.dimension == 1:
             c1 = convolve_fft(delta_pulse_1D, kernel, boundary='fill')
-            c2 = convolve(delta_pulse_1D, kernel, boundary='fill')
+            c2 = convolve(delta_pulse_1D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
         else:
             c1 = convolve_fft(delta_pulse_2D, kernel, boundary='fill')
-            c2 = convolve(delta_pulse_2D, kernel, boundary='fill')
+            c2 = convolve(delta_pulse_2D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
 
     @pytest.mark.parametrize(('kernel_type', 'width'), list(itertools.product(KERNEL_TYPES, WIDTHS_ODD)))
@@ -130,12 +133,12 @@ class TestKernels(object):
             kernel = kernel_type(width, width * 0.2)
 
         if kernel.dimension == 1:
-            c1 = convolve_fft(random_data_1D, kernel, boundary='fill')
-            c2 = convolve(random_data_1D, kernel, boundary='fill')
+            c1 = convolve_fft(random_data_1D, kernel, boundary='constant')
+            c2 = convolve(random_data_1D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
         else:
-            c1 = convolve_fft(random_data_2D, kernel, boundary='fill')
-            c2 = convolve(random_data_2D, kernel, boundary='fill')
+            c1 = convolve_fft(random_data_2D, kernel, boundary='constant')
+            c2 = convolve(random_data_2D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
 
     @pytest.mark.parametrize(('width'), WIDTHS_ODD)
@@ -147,8 +150,8 @@ class TestKernels(object):
         """
         kernel = np.ones([width, width])
 
-        c2 = convolve_fft(delta_pulse_2D, kernel, boundary='fill')
-        c1 = convolve(delta_pulse_2D, kernel, boundary='fill')
+        c2 = convolve_fft(delta_pulse_2D, kernel, boundary='constant')
+        c1 = convolve(delta_pulse_2D, kernel, boundary='constant')
         assert_almost_equal(c1, c2, decimal=12)
 
     @pytest.mark.parametrize(('width'), WIDTHS_ODD)
@@ -159,8 +162,8 @@ class TestKernels(object):
         kernel1 = np.ones([width, width]) / width ** 2
         kernel2 = Box2DKernel(width)
 
-        c2 = convolve_fft(delta_pulse_2D, kernel2, boundary='fill')
-        c1 = convolve_fft(delta_pulse_2D, kernel1, boundary='fill')
+        c2 = convolve_fft(delta_pulse_2D, kernel2, boundary='constant')
+        c1 = convolve_fft(delta_pulse_2D, kernel1, boundary='constant')
 
         assert_almost_equal(c1, c2, decimal=12)
 
@@ -270,8 +273,8 @@ class TestKernels(object):
         custom.normalize()
         box = Box1DKernel(5)
 
-        c2 = convolve(delta_pulse_1D, custom, boundary='fill')
-        c1 = convolve(delta_pulse_1D, box, boundary='fill')
+        c2 = convolve(delta_pulse_1D, custom, boundary='constant')
+        c1 = convolve(delta_pulse_1D, box, boundary='constant')
         assert_almost_equal(c1, c2, decimal=12)
 
     def test_custom_2D_kernel(self):
@@ -284,8 +287,8 @@ class TestKernels(object):
         custom.normalize()
         box = Box2DKernel(5)
 
-        c2 = convolve(delta_pulse_2D, custom, boundary='fill')
-        c1 = convolve(delta_pulse_2D, box, boundary='fill')
+        c2 = convolve(delta_pulse_2D, custom, boundary='constant')
+        c1 = convolve(delta_pulse_2D, box, boundary='constant')
         assert_almost_equal(c1, c2, decimal=12)
 
     def test_custom_1D_kernel_list(self):
@@ -431,11 +434,11 @@ class TestKernels(object):
 
         if kernel.dimension == 1:
             c1 = convolve_fft(delta_pulse_1D, kernel, boundary='fill')
-            c2 = convolve(delta_pulse_1D, kernel, boundary='fill')
+            c2 = convolve(delta_pulse_1D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
         else:
             c1 = convolve_fft(delta_pulse_2D, kernel, boundary='fill')
-            c2 = convolve(delta_pulse_2D, kernel, boundary='fill')
+            c2 = convolve(delta_pulse_2D, kernel, boundary='constant')
             assert_almost_equal(c1, c2, decimal=12)
 
     @pytest.mark.parametrize(('width'), WIDTHS_EVEN)

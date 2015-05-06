@@ -9,9 +9,7 @@ import numpy as np
 
 from .core import Kernel, _convolve_kernels
 from ..utils.exceptions import AstropyUserWarning
-from ..utils.console import human_file_size
-from astropy.convolution.utils import convert_input_array
-from astropy.convolution.kernels import NORMALIZATION_TOLERANCE
+from .utils import convert_input_array
 
 from astropy import units as u
 
@@ -21,8 +19,7 @@ from astropy import units as u
 __doctest_skip__ = ['*']
 
 
-def convolve(array, kernel, boundary='fill', fill_value=0.,
-             normalize_kernel=False):
+def convolve(array, kernel, boundary='constant', fill_value=0., nan_interpolation='standard'):
     '''
     Convolve an array with a kernel.
 
@@ -73,35 +70,19 @@ def convolve(array, kernel, boundary='fill', fill_value=0.,
     Masked arrays are not supported at this time.  The convolution
     is always done at ``numpy.float`` precision.
     '''
-    from .boundary_none import (convolve1d_boundary_none,
-                                convolve2d_boundary_none,
-                                convolve3d_boundary_none,
-                                convolve2d_boundary_none_symmetric,
-                                interpolate2d_boundary_none)
-
-    from .boundary_extend import (convolve1d_boundary_extend,
-                                  convolve2d_boundary_extend,
-                                  convolve3d_boundary_extend)
-
-    from .boundary_fill import (convolve1d_boundary_fill,
-                                convolve2d_boundary_fill,
-                                convolve3d_boundary_fill)
-
-    from .boundary_wrap import (convolve1d_boundary_wrap,
-                                convolve2d_boundary_wrap,
-                                convolve3d_boundary_wrap)
+    from .convolve_cython import convolve_functions, interpolate_functions
 
     # The cython routines all need float type inputs (so, a particular
     # bit size, endianness, etc.).  So we have to convert, which also
     # has the effect of making copies so we don't modify the inputs.
-    # After this, the variables we work with will be array_internal, and
-    # kernel_internal.  However -- we do want to keep track of what type
+    # After this, the variables we work with will be array_, and
+    # kernel_.  However -- we do want to keep track of what type
     # the input array was so we can cast the result to that at the end
     # if it's a floating point type.  Don't bother with this for lists --
     # just always push those as np.float.
     # It is always necessary to make a copy of kernel (since it is modified),
     # but, if we just so happen to be lucky enough to have the input array
-    # have exactly the desired type, we just alias to array_internal
+    # have exactly the desired type, we just alias to array_
 
     # Check if kernel is kernel instance
     if isinstance(kernel, Kernel):
@@ -110,97 +91,56 @@ def convolve(array, kernel, boundary='fill', fill_value=0.,
         if isinstance(array, Kernel):
             return _convolve_kernels(array, kernel)
     else:
-        # This is done because CustomKernel implements all the checks to the kernel array
         from .kernels import CustomKernel
         kernel = CustomKernel(kernel)
-    
-    if kernel.normalization == 0 and normalize_kernel:
-        raise AstropyUserWarning('Kernel cannot be normalized because desired normalization is zero!')
-    kernel_internal = kernel.array
-    
-    # Because the Cython routines have to normalize the kernel on the fly, we
-    # explicitly normalize the kernel here, and then scale the image at the
-    # end if normalization was not requested.
-    
-    # Validate, convert and copy input array    
-    array_internal, array_dtype = convert_input_array(array)
+
+    if kernel.normalization == 0:
+        raise AstropyUserWarning('Kernel cannot be normalized because'
+                                 ' desired normalization is zero!')
+    kernel_ = kernel.array
+    if not kernel.normalized:
+        kernel_sum = kernel_.sum()
+
+    # Validate, convert and copy input array
+    array_, array_dtype = convert_input_array(array)
 
     # Check that the number of dimensions is compatible
-    if array_internal.ndim != kernel_internal.ndim:
+    if array_.ndim != kernel_.ndim:
         raise Exception('array and kernel have differing number of '
                         'dimensions.')
-    
-    if array_internal.ndim == 0:
-        raise Exception("cannot convolve 0-dimensional arrays")
-    elif array_internal.ndim == 1:
-        if boundary == 'extend':
-            result = convolve1d_boundary_extend(array_internal,
-                                                kernel_internal)
-        elif boundary == 'fill':
-            result = convolve1d_boundary_fill(array_internal,
-                                              kernel_internal,
-                                              float(fill_value))
-        elif boundary == 'wrap':
-            result = convolve1d_boundary_wrap(array_internal,
-                                              kernel_internal)
-        else:
-            result = convolve1d_boundary_none(array_internal,
-                                              kernel_internal)
-    elif array_internal.ndim == 2:
-        if kernel.separable:
-            kernel_internal = kernel._array_separable
-            if boundary == 'extend':
-                result = convolve2d_boundary_extend(array_internal, kernel_internal)
-                result = convolve2d_boundary_extend(result, kernel_internal.T)
-            elif boundary == 'fill':
-                result = convolve2d_boundary_fill(array_internal, kernel_internal,
-                                                  float(fill_value))
-                result = convolve2d_boundary_fill(result, kernel_internal.T,
-                                                  float(fill_value))
-            elif boundary == 'wrap':
-                result = convolve2d_boundary_wrap(array_internal, kernel_internal)
-                result = convolve2d_boundary_wrap(result, kernel_internal.T)
-            else:
-                result = interpolate2d_boundary_none(array_internal, kernel_internal)
-                kernel_internal = kernel._array_separable
-                result = convolve2d_boundary_none_symmetric(result, kernel_internal)
-                result = convolve2d_boundary_none_symmetric(result, kernel_internal.T)
-        else:
-            if boundary == 'extend':
-                result = convolve2d_boundary_extend(array_internal,
-                                                    kernel_internal)
-            elif boundary == 'fill':
-                result = convolve2d_boundary_fill(array_internal,
-                                                  kernel_internal,
-                                                  float(fill_value))
-            elif boundary == 'wrap':
-                result = convolve2d_boundary_wrap(array_internal,
-                                                  kernel_internal)
-            else:
-                result = interpolate2d_boundary_none(array_internal, kernel_internal)
-                result = convolve2d_boundary_none(result, kernel_internal)
-    elif array_internal.ndim == 3:
-        if boundary == 'extend':
-            result = convolve3d_boundary_extend(array_internal,
-                                                kernel_internal)
-        elif boundary == 'fill':
-            result = convolve3d_boundary_fill(array_internal,
-                                              kernel_internal,
-                                              float(fill_value))
-        elif boundary == 'wrap':
-            result = convolve3d_boundary_wrap(array_internal,
-                                              kernel_internal)
-        else:
-            result = convolve3d_boundary_none(array_internal,
-                                              kernel_internal)
-    else:
+
+    if array_.ndim == 0:
+        raise Exception('cannot convolve 0-dimensional arrays')
+
+    if array_.ndim > 3:
         raise NotImplemented('convolve only supports 1, 2, and 3-dimensional '
                              'arrays at this time')
 
-    # If normalization was not requested, we need to scale the array (since
-    # the kernel was normalized prior to convolution)
-    if not normalize_kernel:
-        result *= kernel.array.sum()
+    # Apply boundary handling by padding array
+    if boundary is not None:
+        array_padded = np.pad(array_, kernel.center, mode=str(boundary))
+    else:
+        array_padded = array_
+
+    ndim = array_.ndim
+    if nan_interpolation == 'standard':
+        result = interpolate_functions[ndim](array_padded, kernel_)
+        func = convolve_functions[ndim][kernel.symmetry][kernel.separable]
+        result = func(result, kernel_)
+    elif nan_interpolation == 'robust':
+        result = interpolate_functions[ndim](array_padded, kernel_)
+        result = convolve_functions[ndim]['none'][kernel.separable](result, kernel_)
+    elif nan_interpolation == 'none':
+        func = convolve_functions[ndim][kernel.symmetry][kernel.separable]
+        result = func(array_padded, kernel_)
+
+    # depad result to initial size
+    if boundary is not None:
+        depad = [slice(_, -_) for _ in kernel.center]
+        result = result[depad]
+
+    if not kernel.normalized:
+        result *= kernel_sum
 
     # Try to preserve the input type if it's a floating point type
     if array_dtype.kind == 'f':

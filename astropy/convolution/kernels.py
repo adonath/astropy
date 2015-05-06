@@ -9,7 +9,7 @@ from .core import Kernel1D, Kernel2D, Kernel
 from .utils import KernelSizeError
 from ..modeling import models
 from ..modeling.core import Fittable1DModel, Fittable2DModel
-from astropy.utils.exceptions import AstropyUserWarning
+from ..utils.exceptions import AstropyUserWarning
 
 __all__ = sorted(['Gaussian1DKernel', 'Gaussian2DKernel', 'CustomKernel',
                   'Box1DKernel', 'Box2DKernel', 'Tophat2DKernel',
@@ -82,6 +82,7 @@ class Gaussian1DKernel(Kernel1D):
     """
     _separable = True
     _is_bool = False
+    _symmetry = 'x'
 
     def __init__(self, stddev, **kwargs):
         self._model = models.Gaussian1D(1. / (np.sqrt(2 * np.pi) * stddev),
@@ -147,6 +148,7 @@ class Gaussian2DKernel(Kernel2D):
     """
     _separable = True
     _is_bool = False
+    _symmetry = 'radial'
 
     def __init__(self, stddev, **kwargs):
         self._model = models.Gaussian2D(1. / (2 * np.pi * stddev ** 2), 0,
@@ -213,7 +215,8 @@ class Box1DKernel(Kernel1D):
     """
     _separable = True
     _is_bool = True
-    
+    _symmetry = 'x'
+
     def __init__(self, width, **kwargs):
         self._model = models.Box1D(1. / width, 0, width)
         self._default_size = _round_up_to_odd_integer(width)
@@ -281,6 +284,7 @@ class Box2DKernel(Kernel2D):
     """
     _separable = True
     _is_bool = True
+    _symmetry = 'xy'
 
     def __init__(self, width, **kwargs):
         self._model = models.Box2D(1. / width ** 2, 0, 0, width, width)
@@ -340,11 +344,14 @@ class Tophat2DKernel(Kernel2D):
         plt.show()
 
     """
+    _symmetry = 'radial'
+
     def __init__(self, radius, **kwargs):
         self._model = models.Disk2D(1. / (np.pi * radius ** 2), 0, 0, radius)
         self._default_size = _round_up_to_odd_integer(2 * radius)
         super(Tophat2DKernel, self).__init__(**kwargs)
         self.normalize()
+
 
 class Ring2DKernel(Kernel2D):
     """
@@ -359,7 +366,7 @@ class Ring2DKernel(Kernel2D):
         Inner radius of the ring kernel.
     width : number
         Width of the ring kernel.
-    mode : str, optional
+    mode: str, optional
         One of the following discretization modes:
             * 'center' (default)
                 Discretize model by taking the value
@@ -397,6 +404,8 @@ class Ring2DKernel(Kernel2D):
         plt.colorbar()
         plt.show()
     """
+    _symmetry = 'radial'
+
     def __init__(self, radius_in, width, **kwargs):
         radius_out = radius_in + width
         self._model = models.Ring2D(1. / (np.pi * (radius_out ** 2 - radius_in ** 2)),
@@ -454,6 +463,7 @@ class Trapezoid1DKernel(Kernel1D):
         plt.show()
     """
     _is_bool = False
+    _symmetry = 'x'
 
     def __init__(self, width, slope=1., **kwargs):
         self._model = models.Trapezoid1D(1, 0, width, slope)
@@ -513,6 +523,7 @@ class TrapezoidDisk2DKernel(Kernel2D):
 
     """
     _is_bool = False
+    _symmetry = 'radial'
 
     def __init__(self, radius, slope=1., **kwargs):
         self._model = models.TrapezoidDisk2D(1, 0, 0, radius, slope)
@@ -583,6 +594,7 @@ class MexicanHat1DKernel(Kernel1D):
     """
     _is_bool = False
     _normalization = 0
+    _symmetry = 'x'
 
     def __init__(self, width, **kwargs):
         amplitude = 1.0 / (np.sqrt(2 * np.pi) * width ** 3)
@@ -656,6 +668,8 @@ class MexicanHat2DKernel(Kernel2D):
     """
     _is_bool = False
     _normalization = 0
+    _symmetry = 'radial'
+
     def __init__(self, width, **kwargs):
         amplitude = 1.0 / (np.pi * width ** 4)
         self._model = models.MexicanHat2D(amplitude, 0, 0, width)
@@ -717,7 +731,8 @@ class AiryDisk2DKernel(Kernel2D):
         plt.show()
     """
     _is_bool = False
-    
+    _symmetry = 'radial'
+
     def __init__(self, radius, **kwargs):
         self._model = models.AiryDisk2D(1, 0, 0, radius)
         self._default_size = _round_up_to_odd_integer(8 * radius)
@@ -989,6 +1004,7 @@ class CustomKernel(Kernel):
         """
         from .utils import convert_input_array
         array, _ = convert_input_array(array)
+
         # Check if array is odd in all axes
         odd = np.all([axes_size % 2 != 0 for axes_size in array.shape])
         if not odd:
@@ -998,9 +1014,11 @@ class CustomKernel(Kernel):
             self._normalization = 0
         else:
             self._normalization = 1.
-        # Check if array is bool
-        ones = array == 1.
-        zeros = array == 0
-        self._is_bool = np.all(np.logical_or(ones, zeros))
-        self._array = array
 
+        # Check if array is bool
+        self._is_bool = np.all(np.logical_or(array == 1, array == 0))
+
+        # Check if array is separable
+        self._separable = np.linalg.matrix_rank(array) == 1
+        self._array = array
+        self._symmetry = 'none'

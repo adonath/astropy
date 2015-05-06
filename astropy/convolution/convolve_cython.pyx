@@ -13,22 +13,15 @@ cimport cython
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def convolve1d_boundary_none(np.ndarray[DTYPE_t, ndim=1] f,
-                             np.ndarray[DTYPE_t, ndim=1] g):
-
-    if g.shape[0] % 2 != 1:
-        raise ValueError("Convolution kernel must have odd dimensions")
-
-    assert f.dtype == DTYPE and g.dtype == DTYPE
-
+def interpolate1d(np.ndarray[DTYPE_t, ndim=1] f,
+                                np.ndarray[DTYPE_t, ndim=1] g):
     cdef int nx = f.shape[0]
     cdef int nkx = g.shape[0]
     cdef int wkx = nkx // 2
 
     # The following need to be set to zeros rather than empty because the
     # boundary does not get reset.
-    cdef np.ndarray[DTYPE_t, ndim=1] fixed = np.zeros([nx], dtype=DTYPE)
-    cdef np.ndarray[DTYPE_t, ndim=1] conv = np.zeros([nx], dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t, ndim=1] fixed = f.copy()
 
     cdef unsigned int i, ii
 
@@ -56,6 +49,7 @@ def convolve1d_boundary_none(np.ndarray[DTYPE_t, ndim=1] f,
                     fixed[i] = f[i]
             else:
                 fixed[i] = f[i]
+<<<<<<< HEAD:astropy/convolution/boundary_none.pyx
 
         # Now run the proper convolution
         for i in range(wkx, nx - wkx):
@@ -75,12 +69,53 @@ def convolve1d_boundary_none(np.ndarray[DTYPE_t, ndim=1] f,
             else:
                 conv[i] = fixed[i]
     # GIL acquired again here
+=======
+        else:
+            fixed[i] = f[i]
+    return fixed
+
+
+@cython.boundscheck(False)  # turn off bounds-checking for entire function
+def convolve1d(np.ndarray[DTYPE_t, ndim=1] f,
+                             np.ndarray[DTYPE_t, ndim=1] g):
+    cdef int nx = f.shape[0]
+    cdef int nkx = g.shape[0]
+    cdef int wkx = nkx // 2
+
+    # The following need to be set to zeros rather than empty because the
+    # boundary does not get reset.
+    cdef np.ndarray[DTYPE_t, ndim=1] conv = np.zeros([nx], dtype=DTYPE)
+
+    cdef unsigned int i, ii
+
+    cdef int iimin, iimax
+
+    cdef DTYPE_t top, bot, ker, val
+
+    # Now run the proper convolution
+    for i in range(wkx, nx - wkx):
+        if not npy_isnan(f[i]):
+            top = 0.
+            bot = 0.
+            for ii in range(i - wkx, i + wkx + 1):
+                val = f[ii]
+                ker = g[<unsigned int>(wkx + ii - i)]
+                if not npy_isnan(val):
+                    top += val * ker
+                    bot += ker
+            if bot != 0:
+                conv[i] = top / bot
+            else:
+                conv[i] = f[i]
+        else:
+            conv[i] = f[i]
+>>>>>>> Use np.pad for boundary handling:astropy/convolution/convolve_cython.pyx
     return conv
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def interpolate2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
-                             np.ndarray[DTYPE_t, ndim=2] g):
+def interpolate2d(np.ndarray[DTYPE_t, ndim=2] f,
+                                np.ndarray[DTYPE_t, ndim=2] g):
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]
@@ -152,7 +187,7 @@ def interpolate2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
+def convolve2d(np.ndarray[DTYPE_t, ndim=2] f,
                              np.ndarray[DTYPE_t, ndim=2] g):
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
@@ -180,8 +215,8 @@ def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
                 for ii in range(i - wkx, i + wkx + 1):
                     for jj in range(j - wky, j + wky + 1):
                         val = f[ii, jj]
-                        ker = g[<unsigned int>(wkx + ii - i),
-                                <unsigned int>(wky + jj - j)]
+                        ker = g[<unsigned int> (wkx + ii - i),
+                                <unsigned int> (wky + jj - j)]
                         if not npy_isnan(val):
                             top += val * ker
                             bot += ker
@@ -191,12 +226,13 @@ def convolve2d_boundary_none(np.ndarray[DTYPE_t, ndim=2] f,
                     conv[i, j] = f[i, j]
             else:
                 conv[i, j] = f[i, j]
+
     return conv
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
-                             np.ndarray[DTYPE_t, ndim=2] g):
+def convolve2d_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
+                                       np.ndarray[DTYPE_t, ndim=2] g):
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]
@@ -236,9 +272,9 @@ def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
                 val = f[i, j] * g[wkx, wky]
                 for ii in range(1, wkx + 1):
                     val += (f[i + ii, j] +
-                                f[i - ii, j] +
-                                f[i, j - ii] +
-                                f[i, j + ii]) * g[ii + wkx, wkx]
+                            f[i - ii, j] +
+                            f[i, j - ii] +
+                            f[i, j + ii]) * g[ii + wkx, wkx]
                 for ii in range(1, wkx + 1):
                     for jj in range(1, wky + 1):
                         val += (f[i + ii, j + jj] +
@@ -249,9 +285,13 @@ def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
     return conv
 
 
+def convolve2d_separable():
+    raise NotImplementedError
+
+
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
-def convolve2d_boundary_none_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
-                             np.ndarray[DTYPE_t, ndim=2] g):
+def convolve2d_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
+                               np.ndarray[DTYPE_t, ndim=2] g):
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]
@@ -262,7 +302,7 @@ def convolve2d_boundary_none_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
     # The following need to be set to zeros rather than empty because the
     # boundary does not get reset.
     cdef np.ndarray[DTYPE_t, ndim=2] conv = np.zeros([nx, ny], dtype=DTYPE)
-    cdef np.ndarray[DTYPE_t, ndim=2] tmp = np.zeros([wkx, ny], dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t, ndim=2] tmp = np.zeros([wkx + 1, ny], dtype=DTYPE)
 
     cdef unsigned int i, j, ii, jj
 
@@ -278,7 +318,7 @@ def convolve2d_boundary_none_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
         for j in range(wky, ny - wky):
             val = f[i, j] * g[wkx, wky]
             for ii in range(1, wkx + 1):
-                    val += (tmp[ii, j] + f[i, j - ii] + f[i, j + ii]) * g[ii + wkx, wkx]
+                val += (tmp[ii, j] + f[i, j - ii] + f[i, j + ii]) * g[ii + wkx, wkx]
             for ii in range(1, wkx + 1):
                 for jj in range(1, wky + 1):
                     val += (tmp[ii, j + jj] + tmp[ii, j - jj]) * g[ii + wkx, jj + wky]
@@ -287,6 +327,7 @@ def convolve2d_boundary_none_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
+<<<<<<< HEAD:astropy/convolution/boundary_none.pyx
 def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
                              np.ndarray[DTYPE_t, ndim=2] g):
 
@@ -346,6 +387,9 @@ def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
 def convolve3d_boundary_none(np.ndarray[DTYPE_t, ndim=3] f,
+=======
+def convolve3d(np.ndarray[DTYPE_t, ndim=3] f,
+>>>>>>> Use np.pad for boundary handling:astropy/convolution/convolve_cython.pyx
                              np.ndarray[DTYPE_t, ndim=3] g):
 
     if g.shape[0] % 2 != 1 or g.shape[1] % 2 != 1 or g.shape[2] % 2 != 1:
@@ -427,3 +471,29 @@ def convolve3d_boundary_none(np.ndarray[DTYPE_t, ndim=3] f,
                         conv[i, j, k] = fixed[i, j, k]
     # GIL acquired again here
     return conv
+
+
+def interpolate3d():
+    raise NotImplementedError
+
+
+ndim_1 = {'x': {True: convolve1d,
+                False: convolve1d},
+          'none': {True: convolve1d,
+                   False: convolve1d}}
+
+ndim_2 = {'radial': {True: convolve2d_symmetric_cache,
+                     False: convolve2d_symmetric_cache},
+          'xy': {True: convolve2d_symmetric_cache,
+                 False: convolve2d_symmetric_cache},
+          'none': {True: convolve2d,
+                   False: convolve2d}}
+
+ndim_3 = {'none': {True: convolve3d,
+                   False: convolve3d}}
+
+convolve_functions = {1: ndim_1, 2: ndim_2, 3: ndim_3}
+
+interpolate_functions = {1: interpolate1d,
+                         2: interpolate2d,
+                         3: interpolate3d}

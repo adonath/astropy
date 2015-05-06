@@ -1,12 +1,18 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+import collections
 
 import numpy as np
 
-from ..modeling.core import FittableModel, custom_model
+from ..modeling.core import Fittable1DModel, Fittable2DModel
+
 
 __all__ = ['discretize_model']
+
+
+def Tree():
+    return collections.defaultdict(Tree)
 
 
 class DiscretizationError(Exception):
@@ -23,7 +29,7 @@ class KernelSizeError(Exception):
 def convert_input_array(array):
     # Check that the arguments are lists or Numpy arrays
     if isinstance(array, list):
-        array_internal = np.array(array, dtype=np.float)
+        array_internal = np.array(array, dtype=np.float64)
         array_dtype = array_internal.dtype
     elif isinstance(array, np.ndarray):
         # Note this won't copy if it doesn't have to -- which is okay
@@ -32,9 +38,9 @@ def convert_input_array(array):
         # a try/except because astropy supports 1.5 and 1.6
         array_dtype = array.dtype
         try:
-            array_internal = array.astype(float, copy=False)
+            array_internal = array.astype(np.float64, copy=False)
         except TypeError:
-            array_internal = array.astype(float)
+            array_internal = array.astype(np.float64)
     else:
         raise TypeError("array should be a list or a Numpy array")
     return array_internal, array_dtype
@@ -92,16 +98,12 @@ def add_kernel_arrays_2D(array_1, array_2):
 
 def discretize_model(model, x_range, y_range=None, mode='center', factor=10):
     """
-    Function to evaluate analytical model functions on a grid.
-
-    So far the function can only deal with pixel coordinates.
+    Function to evaluate analytical models on a grid.
 
     Parameters
     ----------
-    model : `~astropy.modeling.FittableModel` or callable.
-        Analytic model function to be discretized. Callables, which are not an
-        instances of `~astropy.modeling.FittableModel` are passed to
-        `~astropy.modeling.custom_model` and then evaluated.
+    model : `~astropy.modeling.FittableModel`
+        Model to be evaluated.
     x_range : tuple
         x range in which the model is evaluated.
     y_range : tuple, optional
@@ -157,37 +159,27 @@ def discretize_model(model, x_range, y_range=None, mode='center', factor=10):
 
 
     """
-    if not callable(model):
-        raise TypeError('Model must be callable.')
-    if not isinstance(model, FittableModel):
-        model = custom_model(model)()
-    ndim = model.n_inputs
-    if ndim > 2:
-        raise ValueError('discretize_model only supports 1-d and 2-d models.')
-
-    if ndim == 2 and y_range is None:
-        raise ValueError("y range not specified, but model is 2-d")
-    if ndim == 1 and y_range is not None:
-        raise ValueError("y range specified, but model is only 1-d.")
+    if isinstance(model, Fittable2DModel) and y_range is None:
+        raise Exception("Please specify y range.")
     if mode == "center":
-        if ndim == 1:
+        if isinstance(model, Fittable1DModel):
             return discretize_center_1D(model, x_range)
-        elif ndim == 2:
+        if isinstance(model, Fittable2DModel):
             return discretize_center_2D(model, x_range, y_range)
     elif mode == "linear_interp":
-        if ndim == 1:
+        if isinstance(model, Fittable1DModel):
             return discretize_linear_1D(model, x_range)
-        if ndim == 2:
+        if isinstance(model, Fittable2DModel):
             return discretize_bilinear_2D(model, x_range, y_range)
     elif mode == "oversample":
-        if ndim == 1:
+        if isinstance(model, Fittable1DModel):
             return discretize_oversample_1D(model, x_range, factor)
-        if ndim == 2:
+        if isinstance(model, Fittable2DModel):
             return discretize_oversample_2D(model, x_range, y_range, factor)
     elif mode == "integrate":
-        if ndim == 1:
+        if isinstance(model, Fittable1DModel):
             return discretize_integrate_1D(model, x_range)
-        if ndim == 2:
+        if isinstance(model, Fittable2DModel):
             return discretize_integrate_2D(model, x_range, y_range)
     else:
         raise DiscretizationError('Invalid mode.')

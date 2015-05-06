@@ -40,7 +40,9 @@ class Kernel(object):
     _separable = False
     _is_bool = True
     _model = None
+    _symmetries = None
     _normalization = 1.
+    normalized = True
 
     def __init__(self, array):
         self._sum = array.sum()
@@ -87,7 +89,7 @@ class Kernel(object):
     @property
     def normalization(self):
         """
-        Desired kernel normalization. 
+        Desired kernel normalization.
         """
         return self._normalization
 
@@ -113,6 +115,13 @@ class Kernel(object):
         if mode == 'peak':
             np.divide(self._array, self._array.max(), self.array)
             #self._sum = self._array.sum()
+
+    @property
+    def symmetry(self):
+        """
+        Symmetries of the kernel array.
+        """
+        return self._symmetry
 
     @property
     def shape(self):
@@ -312,8 +321,7 @@ class Kernel2D(Kernel):
             raise TypeError("Must specify either array or model.")
         super(Kernel2D, self).__init__(array)
         if self.separable:
-            self._array_separable = np.array([self._array[self.center[0]]])
-            self._array_separable /= self._array_separable.sum()    
+            self._array_separable = np.sqrt(np.array([self._array[self.center[0]]]))
 
 
 def kernel_arithmetics(kernel, value, operation):
@@ -359,9 +367,6 @@ def kernel_arithmetics(kernel, value, operation):
                             "to use convolve(kernel1, kernel2) instead.")
         new_kernel = Kernel2D(array=new_array)
         new_kernel._separable = kernel._separable and value._separable
-        if new_kernel._separable:
-            new_kernel._array_separable = add_kernel_arrays_2D(kernel._array_separable, value._array_separable)
-            new_kernel._array_separable /= new_kernel._array_separable.sum()
         new_kernel._is_bool = kernel._is_bool or value._is_bool
 
     # kernel and number
@@ -380,6 +385,7 @@ def kernel_arithmetics(kernel, value, operation):
 def _convolve_kernels(kernel_1, kernel_2):
     """Convolve two kernels and return and new Kernel instance"""
     from .boundary_fill import convolve1d_boundary_fill, convolve2d_boundary_fill
+
     if isinstance(kernel_1, Kernel1D) and isinstance(kernel_2, Kernel1D):
         new_array = convolve1d_boundary_fill(kernel_1.array, kernel_2.array, 0)
         new_kernel = Kernel1D(array=new_array)
