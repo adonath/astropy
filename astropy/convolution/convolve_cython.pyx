@@ -232,7 +232,7 @@ def convolve2d(np.ndarray[DTYPE_t, ndim=2] f,
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
 def convolve2d_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
-                                       np.ndarray[DTYPE_t, ndim=2] g):
+                         np.ndarray[DTYPE_t, ndim=2] g):
     cdef int nx = f.shape[0]
     cdef int ny = f.shape[1]
     cdef int nkx = g.shape[0]
@@ -285,10 +285,6 @@ def convolve2d_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
     return conv
 
 
-def convolve2d_separable():
-    raise NotImplementedError
-
-
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
 def convolve2d_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
                                np.ndarray[DTYPE_t, ndim=2] g):
@@ -324,6 +320,11 @@ def convolve2d_symmetric_cache(np.ndarray[DTYPE_t, ndim=2] f,
                     val += (tmp[ii, j + jj] + tmp[ii, j - jj]) * g[ii + wkx, jj + wky]
             conv[i, j] = val
     return conv
+
+
+def convolve2d_separable(array, kernel):
+    result = convolve2d_symmetric(array, kernel)
+    return convolve2d_symmetric(result, kernel.T)
 
 
 @cython.boundscheck(False)  # turn off bounds-checking for entire function
@@ -389,8 +390,12 @@ def convolve2d_boundary_none_symmetric(np.ndarray[DTYPE_t, ndim=2] f,
 def convolve3d_boundary_none(np.ndarray[DTYPE_t, ndim=3] f,
 =======
 def convolve3d(np.ndarray[DTYPE_t, ndim=3] f,
+<<<<<<< HEAD
 >>>>>>> Use np.pad for boundary handling:astropy/convolution/convolve_cython.pyx
                              np.ndarray[DTYPE_t, ndim=3] g):
+=======
+               np.ndarray[DTYPE_t, ndim=3] g):
+>>>>>>> Added separable convolution
 
     if g.shape[0] % 2 != 1 or g.shape[1] % 2 != 1 or g.shape[2] % 2 != 1:
         raise ValueError("Convolution kernel must have odd dimensions")
@@ -482,9 +487,9 @@ ndim_1 = {'x': {True: convolve1d,
           'none': {True: convolve1d,
                    False: convolve1d}}
 
-ndim_2 = {'radial': {True: convolve2d_symmetric_cache,
+ndim_2 = {'radial': {True: convolve2d_separable,
                      False: convolve2d_symmetric_cache},
-          'xy': {True: convolve2d_symmetric_cache,
+          'xy': {True: convolve2d_separable,
                  False: convolve2d_symmetric_cache},
           'none': {True: convolve2d,
                    False: convolve2d}}

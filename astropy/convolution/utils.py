@@ -1,18 +1,13 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-import collections
-
 import numpy as np
 
 from ..modeling.core import Fittable1DModel, Fittable2DModel
+from astropy.utils.exceptions import AstropyUserWarning
 
 
 __all__ = ['discretize_model']
-
-
-def Tree():
-    return collections.defaultdict(Tree)
 
 
 class DiscretizationError(Exception):
@@ -25,6 +20,28 @@ class KernelSizeError(Exception):
     """
     Called when size of kernels is even.
     """
+
+
+def get_separable_kernel(array):
+    """
+    Given a 2d kernel the kernel is decomposed into the outer product of
+    two 1d kernels.
+
+    See: http://blogs.mathworks.com/steve/2006/11/28/separable-convolution-part-2/
+
+    Parameters
+    ----------
+    array : ndarray
+        Kernel array to be decomposed
+    """
+    # check if kernel array is separable at all
+    if np.linalg.matrix_rank(array) != 1:
+        raise AstropyUserWarning('Kernel not separable.')
+
+    # compute singular value decomposition
+    _, s, V = np.linalg.svd(array)
+    return np.array([np.abs(V[0, :]) * np.sqrt(s[0])])
+
 
 def convert_input_array(array):
     # Check that the arguments are lists or Numpy arrays

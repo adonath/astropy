@@ -28,6 +28,7 @@ def _round_up_to_odd_integer(value):
 
 NORMALIZATION_TOLERANCE = 0.1
 
+
 class Gaussian1DKernel(Kernel1D):
     """
     1D Gaussian filter kernel.

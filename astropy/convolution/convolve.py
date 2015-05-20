@@ -97,7 +97,11 @@ def convolve(array, kernel, boundary='constant', fill_value=0., nan_interpolatio
     if kernel.normalization == 0:
         raise AstropyUserWarning('Kernel cannot be normalized because'
                                  ' desired normalization is zero!')
-    kernel_ = kernel.array
+    if kernel.separable:
+        kernel_ = kernel._array_separable
+    else:
+        kernel_ = kernel._array
+
     if not kernel.normalized:
         kernel_sum = kernel_.sum()
 
@@ -312,23 +316,35 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
     # complex components, we change the types.  Only the real part will be
     # returned! Note that this always makes a copy.
     # Check kernel is kernel instance
+
+    # Check if kernel is kernel instance
     if isinstance(kernel, Kernel):
-        kernel = kernel.array
+        # Check if array is also kernel instance, if so convolve and
+        # return new kernel instance
         if isinstance(array, Kernel):
             raise TypeError("Can't convolve two kernels. Use convolve() instead.")
+    else:
+        from .kernels import CustomKernel
+        kernel = CustomKernel(kernel)
+
+    if kernel.normalization == 0:
+        raise AstropyUserWarning('Kernel cannot be normalized because'
+                                 ' desired normalization is zero!')
 
     # Convert array dtype to complex
     # and ensure that list inputs become arrays
-    array = np.asarray(array, dtype=np.complex)
-    kernel = np.asarray(kernel, dtype=np.complex)
+    array_ = np.asarray(array, dtype=np.complex)
+    kernel_ = np.asarray(kernel.array, dtype=np.complex)
+
+    kernel_sum = kernel_.sum()
 
     # Check that the number of dimensions is compatible
-    if array.ndim != kernel.ndim:
+    if array_.ndim != kernel_.ndim:
         raise ValueError("Image and kernel must have same number of "
                          "dimensions")
 
     arrayshape = array.shape
-    kernshape = kernel.shape
+    kernshape = kernel_.shape
 
     array_size_B = (np.product(arrayshape, dtype=np.int64) *
                     np.dtype(complex_dtype).itemsize)*u.byte
@@ -340,20 +356,21 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
     # mask catching - masks must be turned into NaNs for use later
     if np.ma.is_masked(array):
         mask = array.mask
-        array = np.array(array)
-        array[mask] = np.nan
-    if np.ma.is_masked(kernel):
-        mask = kernel.mask
-        kernel = np.array(kernel)
-        kernel[mask] = np.nan
+        array_ = np.array(array_)
+        array_[mask] = np.nan
+    if np.ma.is_masked(kernel_):
+        mask = kernel_.mask
+        kernel_ = np.array(kernel_)
+        kernel_[mask] = np.nan
 
     # NaN and inf catching
-    nanmaskarray = np.isnan(array) | np.isinf(array)
-    array[nanmaskarray] = 0
-    nanmaskkernel = np.isnan(kernel) | np.isinf(kernel)
-    kernel[nanmaskkernel] = 0
-    if (not interpolate_nan and not quiet and (np.any(nanmaskarray) or
-                                               np.any(nanmaskkernel))):
+
+    nanmaskarray = np.isnan(array_) | np.isinf(array_)
+    array_[nanmaskarray] = 0
+    nanmaskkernel = np.isnan(kernel_) | np.isinf(kernel_)
+    kernel_[nanmaskkernel] = 0
+    if ((nanmaskarray.sum() > 0 or nanmaskkernel.sum() > 0) and
+            not interpolate_nan and not quiet):
         warnings.warn("NOT ignoring NaN values even though they are present "
                       " (they are treated as 0)", AstropyUserWarning)
 
@@ -362,15 +379,15 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
             raise Exception("The kernel can't be normalized, because its sum is "
                             "close to zero. The sum of the given kernel is < {0}"
                             .format(NORMALIZATION_TOLERANCE))
-        kernel = kernel / kernel.sum()
+        kernel_ = kernel_ / kernel_sum
         kernel_is_normalized = True
     elif normalize_kernel:
         # try this.  If a function is not passed, the code will just crash... I
         # think type checking would be better but PEPs say otherwise...
-        kernel = kernel / normalize_kernel(kernel)
+        kernel_ = kernel_ / normalize_kernel(kernel_)
         kernel_is_normalized = True
     else:
-        if np.abs(kernel.sum() - 1) < 1e-8:
+        if np.abs(kernel_sum - 1) < 1e-8:
             kernel_is_normalized = True
         else:
             kernel_is_normalized = False
@@ -422,7 +439,7 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
             # add the shape lists (max of a list of length 4) (smaller)
             # also makes the shapes square
             fsize = 2 ** np.ceil(np.log2(np.max(arrayshape + kernshape)))
-        newshape = np.array([fsize for ii in range(array.ndim)], dtype=int)
+        newshape = np.array([fsize for ii in range(array_ .ndim)], dtype=int)
     else:
         if psf_pad:
             # just add the biggest dimensions
@@ -466,15 +483,15 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
 
     if not np.all(newshape == arrayshape):
         bigarray = np.ones(newshape, dtype=complex_dtype) * fill_value
-        bigarray[arrayslices] = array
+        bigarray[arrayslices] = array_
     else:
-        bigarray = array
+        bigarray = array_
 
     if not np.all(newshape == kernshape):
         bigkernel = np.zeros(newshape, dtype=complex_dtype)
-        bigkernel[kernslices] = kernel
+        bigkernel[kernslices] = kernel_
     else:
-        bigkernel = kernel
+        bigkernel = kernel_
 
     arrayfft = fftn(bigarray)
     # need to shift the kernel so that, e.g., [0,0,1,0] -> [1,0,0,0] = unity
@@ -490,7 +507,7 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
         wtfft = fftn(bigimwt)
         # I think this one HAS to be normalized (i.e., the weights can't be
         # computed with a non-normalized kernel)
-        wtfftmult = wtfft * kernfft / kernel.sum()
+        wtfftmult = wtfft * kernfft / kernel_sum
         wtsm = ifftn(wtfftmult)
         # need to re-zero weights outside of the image (if it is padded, we
         # still don't weight those regions)
@@ -508,8 +525,8 @@ def convolve_fft(array, kernel, boundary='fill', fill_value=0, crop=True,
     # restore NaNs in original image (they were modified inplace earlier)
     # We don't have to worry about masked arrays - if input was masked, it was
     # copied
-    array[nanmaskarray] = np.nan
-    kernel[nanmaskkernel] = np.nan
+    array_[nanmaskarray] = np.nan
+    kernel_[nanmaskkernel] = np.nan
 
     if return_fft:
         return fftmult

@@ -23,7 +23,7 @@ import copy
 import numpy as np
 from ..utils.exceptions import AstropyUserWarning
 from .utils import (discretize_model, add_kernel_arrays_1D,
-                    add_kernel_arrays_2D)
+                    add_kernel_arrays_2D, get_separable_kernel)
 
 __all__ = ['Kernel', 'Kernel1D', 'Kernel2D', 'kernel_arithmetics']
 
@@ -115,6 +115,8 @@ class Kernel(object):
         if mode == 'peak':
             np.divide(self._array, self._array.max(), self.array)
             #self._sum = self._array.sum()
+        if self.separable:
+            self._array_separable = get_separable_kernel(self._array)
 
     @property
     def symmetry(self):
@@ -321,7 +323,7 @@ class Kernel2D(Kernel):
             raise TypeError("Must specify either array or model.")
         super(Kernel2D, self).__init__(array)
         if self.separable:
-            self._array_separable = np.sqrt(np.array([self._array[self.center[0]]]))
+            self._array_separable = get_separable_kernel(self._array)
 
 
 def kernel_arithmetics(kernel, value, operation):
